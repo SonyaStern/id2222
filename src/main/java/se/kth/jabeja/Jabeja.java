@@ -1,17 +1,19 @@
 package se.kth.jabeja;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Random;
 import org.apache.log4j.Logger;
 import se.kth.jabeja.config.Config;
 import se.kth.jabeja.config.NodeSelectionPolicy;
 import se.kth.jabeja.io.FileIO;
 import se.kth.jabeja.rand.RandNoGenerator;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.*;
-
 public class Jabeja {
-  final static Logger logger = Logger.getLogger(Jabeja.class);
+  static final Logger logger = Logger.getLogger(Jabeja.class);
   private final Config config;
   private final HashMap<Integer/*id*/, Node/*neighbors*/> entireGraph;
   private final List<Integer> nodeIds;
@@ -19,6 +21,8 @@ public class Jabeja {
   private int round;
   private float T;
   private boolean resultFileCreated = false;
+
+  private final Random random = new Random();
 
   //-------------------------------------------------------------------
   public Jabeja(HashMap<Integer, Node> graph, Config config) {
@@ -38,6 +42,9 @@ public class Jabeja {
         sampleAndSwap(id);
       }
 
+      if (round == 400) {
+        this.T = config.getTemperature() * config.getDelta();
+      }
       //one cycle for all nodes have completed.
       //reduce the temperature
       saCoolDown();
@@ -50,10 +57,17 @@ public class Jabeja {
    */
   private void saCoolDown(){
     // TODO for second task
-    if (T > 1)
-      T -= config.getDelta();
-    if (T < 1)
-      T = 1;
+//    if (T > 1)
+//      T -= config.getDelta();
+//    if (T < 1)
+//      T = 1;
+
+    float Tmin = 0.0001F;
+    T *= config.getDelta();
+
+    if (T < Tmin) {
+      T = Tmin;
+    }
   }
 
   /**
@@ -67,17 +81,22 @@ public class Jabeja {
     if (config.getNodeSelectionPolicy() == NodeSelectionPolicy.HYBRID
             || config.getNodeSelectionPolicy() == NodeSelectionPolicy.LOCAL) {
       // swap with random neighbors
-      // TODO
+      partner = findPartner(nodeId, getNeighbors(nodep));
     }
 
     if (config.getNodeSelectionPolicy() == NodeSelectionPolicy.HYBRID
             || config.getNodeSelectionPolicy() == NodeSelectionPolicy.RANDOM) {
       // if local policy fails then randomly sample the entire graph
-      // TODO
+      partner = findPartner(nodeId, getSample(nodeId));
     }
 
     // swap the colors
-    // TODO
+    if (partner != null) {
+      int tempColor = nodep.getColor();
+      nodep.setColor(partner.getColor());
+      partner.setColor(tempColor);
+      numberOfSwaps++;
+    }
   }
 
   public Node findPartner(int nodeId, Integer[] nodes){
@@ -87,7 +106,35 @@ public class Jabeja {
     Node bestPartner = null;
     double highestBenefit = 0;
 
-    // TODO
+    for (int node: nodes) {
+      Node potentialNode = entireGraph.get(node);
+
+        if (potentialNode.getColor() != nodep.getColor()) {
+          int currentDp = getDegree(nodep, nodep.getColor());
+          int currentDq = getDegree(potentialNode, potentialNode.getColor());
+
+          double currentEnergy = Math.pow(currentDp, config.getAlpha()) + Math.pow(currentDq, config.getAlpha());
+
+          int potentialDp = getDegree(nodep, potentialNode.getColor());
+          int potentialDq = getDegree(potentialNode, nodep.getColor());
+
+          double potentialEnergy = Math.pow(potentialDp, config.getAlpha()) + Math.pow(potentialDq, config.getAlpha());
+
+          double acceptanceProbability = Math.exp((1 / currentEnergy - 1 / potentialEnergy) / T);
+//        double acceptanceProbability = Math.exp((potentialEnergy - currentEnergy) / T);
+
+          if (acceptanceProbability > random.nextDouble() && highestBenefit < potentialEnergy &&
+                  currentEnergy != potentialEnergy) {
+            bestPartner = potentialNode;
+            highestBenefit = potentialEnergy;
+          }
+
+//      if (potentialEnergy != currentEnergy && potentialEnergy * T > currentEnergy && highestBenefit < potentialEnergy) {
+//        bestPartner = potentialNode;
+//        highestBenefit = potentialEnergy;
+//      }
+        }
+    }
 
     return bestPartner;
   }
